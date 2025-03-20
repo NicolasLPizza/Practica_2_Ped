@@ -1,0 +1,2 @@
+2025-03-20 11:23:20,681 - INFO - Solicitud de ('127.0.0.1', 53352): 2 -> El número 2 es primo
+2025-03-20 11:23:37,943 - INFO - Solicitud de ('127.0.0.1', 53354): 56643256 -> El número 56643256 no es primo
