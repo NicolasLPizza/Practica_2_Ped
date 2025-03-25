@@ -1,0 +1,791 @@
+import os
+import concurrent.futures
+import pygame
+import sys
+import random
+import math
+
+# Importa la función del cliente para verificar números primos
+from prime_client import verificar_primo_remoto
+
+# Define la carpeta donde están todas las imágenes
+ASSETS_DIR = "assets"
+
+###############################
+#       FUNCIONES AUXILIARES
+###############################
+
+def calcular_area(largo, ancho):
+    print(f"[Área] Iniciando cálculo de área: {largo} x {ancho}")
+    area = largo * ancho
+    print(f"[Área] Área calculada: {area}")
+    return area
+
+def distance_point_to_line(p, a, b):
+    """
+    Calcula la distancia del punto p a la línea definida por [a, b].
+    p, a y b son tuplas (x, y).
+    """
+    ab = (b[0] - a[0], b[1] - a[1])
+    ap = (p[0] - a[0], p[1] - a[1])
+    ab_len_sq = ab[0]**2 + ab[1]**2
+    if ab_len_sq == 0:
+        return math.hypot(p[0] - a[0], p[1] - a[1])
+    t = (ap[0]*ab[0] + ap[1]*ab[1]) / ab_len_sq
+    t = max(0, min(1, t))
+    closest = (a[0] + t*ab[0], a[1] + t*ab[1])
+    return math.hypot(p[0] - closest[0], p[1] - closest[1])
+
+def compute_avoidance_vector(rumba_pos, lasers, threshold=150, weight=60):
+    """
+    Calcula un vector de repulsión para evitar láseres en fase "warning" o "active".
+    """
+    avoidance = [0, 0]
+    for laser in lasers:
+        if laser["phase"] in ["active", "warning"]:
+            a = laser["start"]
+            b = laser["end"]
+            ab = (b[0] - a[0], b[1] - a[1])
+            ab_len_sq = ab[0]**2 + ab[1]**2
+            if ab_len_sq == 0:
+                continue
+            ap = (rumba_pos[0]-a[0], rumba_pos[1]-a[1])
+            t = (ap[0]*ab[0] + ap[1]*ab[1]) / ab_len_sq
+            t = max(0, min(1, t))
+            closest = (a[0] + t*ab[0], a[1] + t*ab[1])
+            dx = rumba_pos[0] - closest[0]
+            dy = rumba_pos[1] - closest[1]
+            d = math.hypot(dx, dy)
+            if d < threshold and d != 0:
+                factor = (threshold - d) / threshold
+                avoidance[0] += (dx/d) * factor * weight
+                avoidance[1] += (dy/d) * factor * weight
+    return avoidance
+
+###############################
+#       FUNCIONES DE LÁSERES
+###############################
+
+def spawn_laser(current_time):
+    """Crea un láser normal con advertencia (1 s) y activo (0.5 s)."""
+    tipo = random.choice(["horizontal", "vertical"])
+    if tipo == "horizontal":
+        y = random.randint(50, 600)
+        start = (0, y)
+        end = (800, y)
+    else:
+        x = random.randint(50, 750)
+        start = (x, 0)
+        end = (x, 650)
+    return {
+        "start": start,
+        "end": end,
+        "creation_time": current_time,
+        "warning_duration": 1000,
+        "active_duration": 500,
+        "phase": "warning",
+        "big": False
+    }
+
+def spawn_big_laser(current_time):
+    """Crea un 'big laser' con tiempos extendidos y mayor grosor."""
+    tipo = random.choice(["horizontal", "vertical"])
+    if tipo == "horizontal":
+        y = random.randint(50, 600)
+        start = (0, y)
+        end = (800, y)
+    else:
+        x = random.randint(50, 750)
+        start = (x, 0)
+        end = (x, 650)
+    return {
+        "start": start,
+        "end": end,
+        "creation_time": current_time,
+        "warning_duration": 1500,
+        "active_duration": 1000,
+        "phase": "warning",
+        "big": True
+    }
+
+###############################
+# GENERACIÓN DE OBSTÁCULOS CON CONCURRENCIA
+###############################
+
+def generate_obstacle_candidate(ancho, alto, zonas, posiciones, escala):
+    """
+    Genera un candidato de obstáculo aleatorio y lo valida para asegurarse
+    de que no colisione con las zonas.
+    """
+    obs_width = random.randint(50, 150)
+    obs_height = random.randint(50, 150)
+    obs_x = random.randint(0, ancho - obs_width)
+    obs_y = random.randint(0, alto - obs_height)
+    candidate_rect = pygame.Rect(obs_x, obs_y, obs_width, obs_height)
+    for zona in zonas:
+        zone_rect = pygame.Rect(
+            posiciones[zona][0],
+            posiciones[zona][1],
+            int(zonas[zona][0] * escala),
+            int(zonas[zona][1] * escala)
+        )
+        if candidate_rect.colliderect(zone_rect):
+            print(f"[Obstáculo] Candidato {candidate_rect} rechazado por colisión con zona {zona}.")
+            return None
+    print(f"[Obstáculo] Candidato {candidate_rect} aceptado.")
+    return candidate_rect
+
+###############################
+#           GAME OVER
+###############################
+
+def game_over(screen, clock, score):
+    """Muestra un mensaje de Game Over con la puntuación final."""
+    font = pygame.font.SysFont(None, 48)
+    text = font.render(f"¡Rumba destruido! Tuercas acumuladas: {score}", True, (255, 0, 0))
+    screen.fill((0, 0, 0))
+    screen.blit(text, (50, 300))
+    pygame.display.flip()
+    pygame.time.wait(3000)
+    pygame.quit()
+    sys.exit()
+
+###############################
+# FUNCIONES PARA CARGAR IMÁGENES CON CONCURRENCIA
+###############################
+
+def load_and_scale_image(fname, size=None):
+    """
+    Carga una imagen usando pygame, la convierte a alpha y la escala
+    si se indica un tamaño.
+    """
+    print(f"[Imagen] Cargando imagen: {fname}")
+    img = pygame.image.load(fname).convert_alpha()
+    if size is not None:
+        img = pygame.transform.scale(img, size)
+        print(f"[Imagen] Imagen {fname} escalada a {size}")
+    return img
+
+def load_images_concurrently(fnames, size=None):
+    """
+    Carga una lista de imágenes de forma concurrente y las devuelve en el mismo orden.
+    """
+    print(f"[Imagen] Cargando {len(fnames)} imágenes de forma concurrente...")
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        images = list(executor.map(lambda fname: load_and_scale_image(fname, size), fnames))
+    print(f"[Imagen] Se cargaron todas las imágenes.")
+    return images
+
+###############################
+#       MENÚ PRINCIPAL CON SPRITES
+###############################
+
+def main_menu(screen, clock, ancho, alto):
+    """
+    Muestra el menú principal del juego, con animación de sprites de fondo
+    y opciones para seleccionar el modo de juego, verificar números primos o salir.
+    """
+    # Rutas de archivos de menú (nota: revisa si el nombre es "Menu-1.png" o "Menu-1.png.png")
+    menu_filenames = [os.path.join(ASSETS_DIR, f"Menu-{i}.png.png") for i in range(1, 8)]
+    menu_frames = load_images_concurrently(menu_filenames)
+    
+    menu_current_frame = 0
+    menu_frame_duration = 200
+    last_menu_frame_change = pygame.time.get_ticks()
+
+    title_font = pygame.font.SysFont(None, 36)
+    option_font = pygame.font.SysFont(None, 28)
+    title_text = title_font.render("Tony Stark Lab", True, (255, 255, 255))
+    option1 = option_font.render("1) Inicio de juego (Manual)", True, (255, 255, 255))
+    option2 = option_font.render("2) Modo expectador (Auto)", True, (255, 255, 255))
+    option3 = option_font.render("3) Salir", True, (255, 255, 255))
+    option4 = option_font.render("4) Verificar número primo", True, (255, 255, 255))
+    text_x = ancho//2 + 100
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1:
+                    return "manual"
+                elif event.key == pygame.K_2:
+                    return "auto"
+                elif event.key == pygame.K_3:
+                    pygame.quit()
+                    sys.exit()
+                elif event.key == pygame.K_4:
+                    # Opción para verificar un número primo
+                    numero_str = input("Introduce un número entero para verificar si es primo: ").strip()
+                    try:
+                        numero = int(numero_str)
+                        respuesta = verificar_primo_remoto(numero)
+                        print("Respuesta del servidor:", respuesta)
+                    except ValueError:
+                        print("Entrada no válida (debe ser un entero).")
+        current_time = pygame.time.get_ticks()
+        if current_time - last_menu_frame_change >= menu_frame_duration:
+            menu_current_frame = (menu_current_frame + 1) % len(menu_frames)
+            last_menu_frame_change = current_time
+
+        screen.blit(menu_frames[menu_current_frame], (0, 0))
+        screen.blit(title_text, (text_x, alto//3 - title_text.get_height()//2))
+        screen.blit(option1, (text_x, alto//2))
+        screen.blit(option2, (text_x, alto//2 + 50))
+        screen.blit(option3, (text_x, alto//2 + 100))
+        screen.blit(option4, (text_x, alto//2 + 150))
+        pygame.display.flip()
+        clock.tick(30)
+
+###############################
+#       FUNCIÓN DE SIMULACIÓN
+###############################
+def mover_rumba_simulation(
+    screen,
+    clock,
+    zonas,
+    posiciones,
+    escala,
+    colores,
+    areas,
+    superficie_total,
+    tiempo_limpeza,
+    obstacles,
+    frames_rumba,
+    background,
+    laser_normal_h_frames,
+    laser_normal_v_frames,
+    laser_big_h_frames,
+    laser_big_v_frames,
+    caution_frames,
+    all_nut_animations,
+    manual_mode=False
+):
+    """
+    Función principal de simulación del juego:
+      - Movimiento del robot (Rumba)
+      - Generación y animación de láseres
+      - Aparición de tuercas con animaciones aleatorias
+      - Manejo de pausa (con ESC) y opción de volver al menú (con M)
+    """
+    rumba_pos = [50, 50]
+    velocidad = 5
+    score = 0
+    paused = False
+
+    current_frame_rumba = 0
+    frame_duration_rumba = 300
+    last_frame_change_rumba = pygame.time.get_ticks()
+
+    current_frame_laser = 0
+    frame_duration_laser = 300
+    last_frame_change_laser = pygame.time.get_ticks()
+
+    caution_current_frame = 0
+    caution_frame_duration = 166
+    last_caution_change = pygame.time.get_ticks()
+
+    nut_current_frame = 0
+    nut_frame_duration = 83
+    last_frame_change_nut = pygame.time.get_ticks()
+
+    lasers = []
+    PROBABILIDAD_LASER = 0.02
+    PROBABILIDAD_BIG_LASER = 0.05
+    spawn_probability_nut = 0.01
+    nuts = []
+    max_nuts_per_zone = 3
+
+    narracion = "Rumba: Robot de Tony Stark, limpiador de tuercas y cazador de láseres."
+
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                # Pausar/Reanudar con ESC
+                if event.key == pygame.K_ESCAPE:
+                    paused = not paused
+                # Volver al menú principal con M
+                if event.key == pygame.K_m:
+                    return "menu"
+
+        if paused:
+            pause_font = pygame.font.SysFont(None, 48)
+            info_font = pygame.font.SysFont(None, 36)
+            pause_text = pause_font.render("PAUSED", True, (255, 0, 0))
+            menu_info_text = info_font.render("Press M to return to menu", True, (255, 255, 255))
+            screen.blit(pause_text, (screen.get_width()//2 - pause_text.get_width()//2,
+                                     screen.get_height()//2 - pause_text.get_height()))
+            screen.blit(menu_info_text, (screen.get_width()//2 - menu_info_text.get_width()//2,
+                                         screen.get_height()//2 + 10))
+            pygame.display.flip()
+            clock.tick(30)
+            continue
+
+        current_time = pygame.time.get_ticks()
+        target_nut = None
+
+        if current_time - last_frame_change_rumba >= frame_duration_rumba:
+            current_frame_rumba = (current_frame_rumba + 1) % len(frames_rumba)
+            last_frame_change_rumba = current_time
+
+        if current_time - last_frame_change_laser >= frame_duration_laser:
+            current_frame_laser = (current_frame_laser + 1) % len(laser_normal_h_frames)
+            last_frame_change_laser = current_time
+
+        if current_time - last_caution_change >= caution_frame_duration:
+            caution_current_frame = (caution_current_frame + 1) % len(caution_frames)
+            last_caution_change = current_time
+
+        if current_time - last_frame_change_nut >= nut_frame_duration:
+            max_frames = max(len(anim) for anim in all_nut_animations)
+            nut_current_frame = (nut_current_frame + 1) % max_frames
+            last_frame_change_nut = current_time
+
+        if random.random() < PROBABILIDAD_LASER:
+            lasers.append(spawn_laser(current_time))
+        if random.random() < PROBABILIDAD_BIG_LASER:
+            lasers.append(spawn_big_laser(current_time))
+
+        lasers_nuevos = []
+        for laser in lasers:
+            elapsed = current_time - laser["creation_time"]
+            if elapsed < laser["warning_duration"]:
+                laser["phase"] = "warning"
+            elif elapsed < laser["warning_duration"] + laser["active_duration"]:
+                laser["phase"] = "active"
+                if laser["start"][1] == laser["end"][1]:
+                    sy = laser["start"][1]
+                    visible_length = 800
+                    for obs in obstacles:
+                        if obs["rect"].top <= sy <= obs["rect"].bottom:
+                            candidate = obs["rect"].left
+                            if 0 < candidate < visible_length:
+                                visible_length = candidate
+                    d = distance_point_to_line(rumba_pos, (0, sy), (visible_length, sy))
+                else:
+                    sx = laser["start"][0]
+                    visible_length = 650
+                    for obs in obstacles:
+                        if obs["rect"].left <= sx <= obs["rect"].right:
+                            candidate = obs["rect"].top
+                            if 0 < candidate < visible_length:
+                                visible_length = candidate
+                    d = distance_point_to_line(rumba_pos, (sx, 0), (sx, visible_length))
+                if d <= 10:
+                    game_over(screen, clock, score)
+                    return
+            else:
+                continue
+            lasers_nuevos.append(laser)
+        lasers = lasers_nuevos
+
+        for zona in zonas:
+            count_nuts = sum(1 for nut in nuts if nut["zone"] == zona)
+            if count_nuts < max_nuts_per_zone:
+                if random.random() < spawn_probability_nut:
+                    pos_x, pos_y = posiciones[zona]
+                    width = int(zonas[zona][0] * escala)
+                    height = int(zonas[zona][1] * escala)
+                    nut_x = random.randint(pos_x + 10, pos_x + width - 10)
+                    nut_y = random.randint(pos_y + 10, pos_y + height - 10)
+                    animation_index = random.randint(0, len(all_nut_animations) - 1)
+                    nuts.append({
+                        "zone": zona,
+                        "pos": [nut_x, nut_y],
+                        "animation_index": animation_index
+                    })
+
+        if not manual_mode:
+            min_dist = float("inf")
+            for nut in nuts:
+                d = math.hypot(rumba_pos[0] - nut["pos"][0], rumba_pos[1] - nut["pos"][1])
+                if d < min_dist:
+                    min_dist = d
+                    target_nut = nut
+            move_vector = [0, 0]
+            if target_nut is not None:
+                move_vector[0] = target_nut["pos"][0] - rumba_pos[0]
+                move_vector[1] = target_nut["pos"][1] - rumba_pos[1]
+            avoidance_lasers = compute_avoidance_vector(rumba_pos, lasers, threshold=150, weight=60)
+            avoidance_obstacles = [0, 0]
+            if math.hypot(avoidance_lasers[0], avoidance_lasers[1]) > 50:
+                total_vector = [avoidance_lasers[0] + avoidance_obstacles[0],
+                                avoidance_lasers[1] + avoidance_obstacles[1]]
+            else:
+                total_vector = [move_vector[0] + avoidance_lasers[0] + avoidance_obstacles[0],
+                                move_vector[1] + avoidance_lasers[1] + avoidance_obstacles[1]]
+        else:
+            keys = pygame.key.get_pressed()
+            manual_vector = [0, 0]
+            if keys[pygame.K_w]:
+                manual_vector[1] -= 1
+            if keys[pygame.K_s]:
+                manual_vector[1] += 1
+            if keys[pygame.K_a]:
+                manual_vector[0] -= 1
+            if keys[pygame.K_d]:
+                manual_vector[0] += 1
+            if manual_vector != [0, 0]:
+                norm = math.hypot(manual_vector[0], manual_vector[1])
+                manual_vector[0] = (manual_vector[0] / norm) * velocidad
+                manual_vector[1] = (manual_vector[1] / norm) * velocidad
+            total_vector = manual_vector
+
+        vector_length = math.hypot(total_vector[0], total_vector[1])
+        if vector_length != 0:
+            total_vector[0] = (total_vector[0] / vector_length) * velocidad
+            total_vector[1] = (total_vector[1] / vector_length) * velocidad
+
+        proposed_pos = [rumba_pos[0] + total_vector[0], rumba_pos[1] + total_vector[1]]
+        collision = False
+        for obs in obstacles:
+            if obs["rect"].collidepoint(proposed_pos[0], proposed_pos[1]):
+                collision = True
+                break
+        if not collision:
+            rumba_pos[0] = proposed_pos[0]
+            rumba_pos[1] = proposed_pos[1]
+        else:
+            angle = random.choice([math.pi/2, -math.pi/2])
+            new_vector_x = total_vector[0]*math.cos(angle) - total_vector[1]*math.sin(angle)
+            new_vector_y = total_vector[0]*math.sin(angle) + total_vector[1]*math.cos(angle)
+            new_proposed_pos = [rumba_pos[0] + new_vector_x, rumba_pos[1] + new_vector_y]
+            collision2 = False
+            for obs in obstacles:
+                if obs["rect"].collidepoint(new_proposed_pos[0], new_proposed_pos[1]):
+                    collision2 = True
+                    break
+            if not collision2:
+                rumba_pos[0] = new_proposed_pos[0]
+                rumba_pos[1] = new_proposed_pos[1]
+
+        rumba_hitbox = pygame.Rect(rumba_pos[0]-10, rumba_pos[1]-10, 20, 20)
+        for nut in nuts[:]:
+            nut_rect = pygame.Rect(nut["pos"][0]-5, nut["pos"][1]-5, 10, 10)
+            if rumba_hitbox.colliderect(nut_rect):
+                nuts.remove(nut)
+                score += 1
+
+        ##############################
+        #       DIBUJADO
+        ##############################
+        screen.blit(background, (0, 0))
+        narr_text = pygame.font.SysFont(None, 28).render(
+            "Rumba: Robot de Tony Stark, limpiador de tuercas y cazador de láseres.",
+            True, (0, 0, 0)
+        )
+        screen.blit(narr_text, (50, 10))
+
+        # Dibujar zonas
+        zonas_estado = {}
+        for zona in zonas:
+            if any(n["zone"] == zona for n in nuts):
+                zonas_estado[zona] = "sucia"
+            else:
+                zonas_estado[zona] = "limpia"
+        for zona, (largo, ancho) in zonas.items():
+            pos_x, pos_y = posiciones[zona]
+            rect_width = int(zonas[zona][0] * escala)
+            rect_height = int(zonas[zona][1] * escala)
+            rect = pygame.Rect(pos_x, pos_y, rect_width, rect_height)
+            estado = zonas_estado[zona]
+            if estado == "limpia":
+                color = (200, 200, 200)
+                texto = f"{zona}: LIMPIADA"
+            else:
+                color = colores[zona]
+                count = sum(1 for nut in nuts if nut["zone"] == zona)
+                texto = f"{zona}: {count} tuerca(s)"
+            pygame.draw.rect(screen, color, rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, 2)
+            text_surface = pygame.font.SysFont(None, 24).render(texto, True, (0, 0, 0))
+            screen.blit(text_surface, (pos_x + 5, pos_y + 5))
+
+        # Dibujar tuercas con animación aleatoria
+        for nut in nuts:
+            anim_index = nut["animation_index"]
+            frames = all_nut_animations[anim_index]
+            frame_index = nut_current_frame % len(frames)
+            nut_frame = frames[frame_index]
+            offset = nut_frame.get_width() // 2
+            screen.blit(nut_frame, (nut["pos"][0] - offset, nut["pos"][1] - offset))
+
+        # Dibujar láseres
+        offset_caution = caution_frames[caution_current_frame].get_width() // 2
+        for laser in lasers:
+            (sx, sy) = laser["start"]
+            (ex, ey) = laser["end"]
+            if laser["phase"] == "warning":
+                if sy == ey:
+                    left_pos = (sx - offset_caution, sy - offset_caution)
+                    right_pos = (ex - offset_caution, ey - offset_caution)
+                    screen.blit(caution_frames[caution_current_frame], left_pos)
+                    screen.blit(caution_frames[caution_current_frame], right_pos)
+                else:
+                    top_pos = (sx - offset_caution, 0 - offset_caution)
+                    bottom_pos = (ex - offset_caution, 650 - offset_caution)
+                    screen.blit(caution_frames[caution_current_frame], top_pos)
+                    screen.blit(caution_frames[caution_current_frame], bottom_pos)
+            else:
+                if sy == ey:
+                    visible_length = 800
+                    for obs in obstacles:
+                        if obs["rect"].top <= sy <= obs["rect"].bottom:
+                            candidate = obs["rect"].left
+                            if 0 < candidate < visible_length:
+                                visible_length = candidate
+                    if laser["big"]:
+                        original_surf = laser_big_h_frames[current_frame_laser]
+                    else:
+                        original_surf = laser_normal_h_frames[current_frame_laser]
+                    if visible_length < 800:
+                        visible_frame = original_surf.subsurface(pygame.Rect(0, 0, visible_length, original_surf.get_height()))
+                        screen.blit(visible_frame, (0, sy - original_surf.get_height()//2))
+                    else:
+                        screen.blit(original_surf, (0, sy - original_surf.get_height()//2))
+                else:
+                    visible_length = 650
+                    for obs in obstacles:
+                        if obs["rect"].left <= sx <= obs["rect"].right:
+                            candidate = obs["rect"].top
+                            if 0 < candidate < visible_length:
+                                visible_length = candidate
+                    if laser["big"]:
+                        original_surf = laser_big_v_frames[current_frame_laser]
+                    else:
+                        original_surf = laser_normal_v_frames[current_frame_laser]
+                    if visible_length < 650:
+                        visible_frame = original_surf.subsurface(pygame.Rect(0, 0, original_surf.get_width(), visible_length))
+                        screen.blit(visible_frame, (sx - original_surf.get_width()//2, 0))
+                    else:
+                        screen.blit(original_surf, (sx - original_surf.get_width()//2, 0))
+
+        for obs in obstacles:
+            pygame.draw.rect(screen, (50, 50, 50), obs["rect"])
+
+        current_sprite = frames_rumba[current_frame_rumba]
+        offset_x = current_sprite.get_width() // 2
+        offset_y = current_sprite.get_height() // 2
+        screen.blit(current_sprite, (int(rumba_pos[0]) - offset_x, int(rumba_pos[1]) - offset_y))
+
+        scoreboard_nut_frame = all_nut_animations[0][nut_current_frame % len(all_nut_animations[0])]
+        scoreboard_nut_anim = pygame.transform.scale(scoreboard_nut_frame, (30, 30))
+        scoreboard_font = pygame.font.SysFont(None, 24)
+        scoreboard_text = scoreboard_font.render(str(score), True, (0, 0, 0))
+        scoreboard_x = 800 - 10 - scoreboard_text.get_width()
+        scoreboard_y = 5
+        screen.blit(scoreboard_text, (scoreboard_x, scoreboard_y))
+        scoreboard_icon_x = scoreboard_x - scoreboard_nut_anim.get_width() - 5
+        scoreboard_icon_y = scoreboard_y
+        screen.blit(scoreboard_nut_anim, (scoreboard_icon_x, scoreboard_icon_y))
+
+        info_superficie = pygame.font.SysFont(None, 24).render(
+            f"Superficie total: {superficie_total} cm²", True, (0, 0, 0)
+        )
+        info_tiempo = pygame.font.SysFont(None, 24).render(
+            f"Tiempo estimado: {tiempo_limpeza:.2f} s", True, (0, 0, 0)
+        )
+        screen.blit(info_superficie, (50, 650 - 60))
+        screen.blit(info_tiempo, (50, 650 - 30))
+
+        pygame.display.flip()
+        clock.tick(30)
+
+##############################
+#            MAIN
+##############################
+
+def main():
+    ancho_ventana = 800
+    alto_ventana = 650
+    pygame.init()
+    screen = pygame.display.set_mode((ancho_ventana, alto_ventana))
+    pygame.display.set_caption("Tony Stark Lab")
+    clock = pygame.time.Clock()
+
+    while True:
+        modo = main_menu(screen, clock, ancho_ventana, alto_ventana)
+        manual_mode = (modo == "manual")
+        print("Modo seleccionado:", modo)
+
+        # Definición de zonas
+        zonas = {
+            'Zona 1': (500, 150),
+            'Zona 2': (480, 101),
+            'Zona 3': (309, 480),
+            'Zona 4': (90, 220)
+        }
+        posiciones = {
+            'Zona 1': (50, 50),
+            'Zona 2': (400, 50),
+            'Zona 3': (50, 300),
+            'Zona 4': (400, 300)
+        }
+        colores = {
+            'Zona 1': (255, 100, 100),
+            'Zona 2': (100, 255, 100),
+            'Zona 3': (100, 100, 255),
+            'Zona 4': (255, 255, 100)
+        }
+        escala = 0.6
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_zona = {
+                executor.submit(calcular_area, largo, ancho): zona 
+                for zona, (largo, ancho) in zonas.items()
+            }
+            areas = {}
+            for future in concurrent.futures.as_completed(future_to_zona):
+                zona = future_to_zona[future]
+                try:
+                    area = future.result()
+                except Exception as exc:
+                    print(f"[Área] {zona} generó una excepción: {exc}")
+                else:
+                    areas[zona] = area
+
+        superficie_total = sum(areas.values())
+        tasa_limpeza = 1000
+        tiempo_limpeza = superficie_total / tasa_limpeza
+
+        print("Áreas de cada zona:", areas)
+        print("Superficie total:", superficie_total)
+        print("Tiempo estimado de limpieza: {:.2f} s".format(tiempo_limpeza))
+
+        # Cargar frames del Rumba
+        rumba_filenames = [
+            os.path.join(ASSETS_DIR, "Rumbaframe1.png"),
+            os.path.join(ASSETS_DIR, "Rumbaframe2.png")
+        ]
+        frames_rumba = load_images_concurrently(rumba_filenames, (120, 120))
+
+        background_path = os.path.join(ASSETS_DIR, "map.png")
+        background = pygame.image.load(background_path).convert()
+        background = pygame.transform.scale(background, (ancho_ventana, alto_ventana))
+
+        laser_filenames = [
+            os.path.join(ASSETS_DIR, "laserFrame1.png"),
+            os.path.join(ASSETS_DIR, "laserFrame2.png")
+        ]
+        laser_normal_h_frames = load_images_concurrently(laser_filenames)
+        laser_normal_v_frames = [
+            pygame.transform.scale(pygame.transform.rotate(surf, 90), (10, 650))
+            for surf in laser_normal_h_frames
+        ]
+        laser_big_h_frames = [
+            pygame.transform.scale(surf, (800, 20))
+            for surf in laser_normal_h_frames
+        ]
+        laser_big_v_frames = [
+            pygame.transform.scale(surf, (20, 650))
+            for surf in laser_normal_v_frames
+        ]
+
+        caution_filenames = [
+            os.path.join(ASSETS_DIR, "Cuidado1.png"),
+            os.path.join(ASSETS_DIR, "Cuidado2.png")
+        ]
+        caution_frames = load_images_concurrently(caution_filenames, (64, 64))
+
+        # Cargar nuevas animaciones de tuercas:
+        tuerca4_filenames = [
+            os.path.join(ASSETS_DIR, "tuerca4.1-1.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca4.2-2.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca4.3-3.png.png")
+        ]
+        tuerca4_frames = load_images_concurrently(tuerca4_filenames, (40, 40))
+
+        tuerca5_filenames = [
+            os.path.join(ASSETS_DIR, "tuerca5.1-1.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca5.1-2.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca5.1-3.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca5.1-4.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca5.1-5.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca5.1-6.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca5.1-7.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca5.1-8.png.png")
+        ]
+        tuerca5_frames = load_images_concurrently(tuerca5_filenames, (40, 40))
+
+        tuerca6_filenames = [
+            os.path.join(ASSETS_DIR, "tuerca 6-1.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca 6-2.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca 6-3.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca 6-4.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca 6-5.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca 6-6.png.png"),
+            os.path.join(ASSETS_DIR, "tuerca 6-7.png.png")
+        ]
+        tuerca6_frames = load_images_concurrently(tuerca6_filenames, (40, 40))
+
+        nut_file_names = [
+            os.path.join(ASSETS_DIR, "Tuerca1-1.png"),
+            os.path.join(ASSETS_DIR, "Tuerca1-2.png"),
+            os.path.join(ASSETS_DIR, "Tuerca3-3.png"),
+            os.path.join(ASSETS_DIR, "Tuerca4-4.png"),
+            os.path.join(ASSETS_DIR, "Tuerca5-5.png"),
+            os.path.join(ASSETS_DIR, "Tuerca6-6.png"),
+            os.path.join(ASSETS_DIR, "Tuerca7-7.png"),
+            os.path.join(ASSETS_DIR, "Tuerca8-8.png"),
+            os.path.join(ASSETS_DIR, "Tuerca9-9.png"),
+            os.path.join(ASSETS_DIR, "Tuerca10-10.png"),
+            os.path.join(ASSETS_DIR, "Tuerca11-11.png"),
+            os.path.join(ASSETS_DIR, "Tuerca12-12.png")
+        ]
+        nut_frames_old = load_images_concurrently(nut_file_names, (20, 20))
+
+        # Agrupar todas las animaciones en una lista
+        all_nut_animations = [
+            tuerca4_frames,
+            tuerca5_frames,
+            tuerca6_frames,
+            nut_frames_old  # Opcional, la animación antigua
+        ]
+
+        obstacles = []
+        num_obstacles = random.randint(2, 5)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            while len(obstacles) < num_obstacles:
+                futures = [executor.submit(generate_obstacle_candidate, ancho_ventana, alto_ventana, zonas, posiciones, escala)
+                           for _ in range(num_obstacles * 2)]
+                for future in concurrent.futures.as_completed(futures):
+                    candidate = future.result()
+                    if candidate is not None:
+                        print(f"[Obstáculo] Candidato aceptado: {candidate}")
+                        obstacles.append({"rect": candidate})
+                        if len(obstacles) >= num_obstacles:
+                            break
+
+        ret = mover_rumba_simulation(
+            screen,
+            clock,
+            zonas,
+            posiciones,
+            escala,
+            colores,
+            areas,
+            superficie_total,
+            tiempo_limpeza,
+            obstacles,
+            frames_rumba,
+            background,
+            laser_normal_h_frames,
+            laser_normal_v_frames,
+            laser_big_h_frames,
+            laser_big_v_frames,
+            caution_frames,
+            all_nut_animations,
+            manual_mode=manual_mode
+        )
+        if ret == "menu":
+            continue
+        else:
+            break
+
+if __name__ == '__main__':
+    main()
