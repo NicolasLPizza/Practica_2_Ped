@@ -177,6 +177,55 @@ def load_images_concurrently(fnames, size=None):
     return images
 
 ###############################
+#       NUEVA MODALIDAD: VERIFICAR NÚMERO PRIMO (MODO)
+###############################
+
+def verificar_primo_mode(screen, clock):
+    """
+    Modalidad para verificar números primos desde la interfaz del juego.
+    Permite al usuario ingresar un número (con entrada de texto) y muestra
+    en pantalla la respuesta recibida del servidor TCP.
+    Presiona ENTER para enviar y M para volver al menú.
+    """
+    font = pygame.font.SysFont(None, 36)
+    input_text = ""
+    result_text = ""
+    active = True
+
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                # Presionar M para volver al menú principal
+                if event.key == pygame.K_m:
+                    return
+                elif event.key == pygame.K_RETURN:
+                    # Al presionar ENTER, intenta convertir el input y verificarlo
+                    try:
+                        numero = int(input_text)
+                        result_text = verificar_primo_remoto(numero)
+                    except ValueError:
+                        result_text = "Entrada no válida. Debe ser un entero."
+                    input_text = ""  # Reinicia el input después de enviar
+                elif event.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+                else:
+                    input_text += event.unicode
+
+        screen.fill((30, 30, 30))
+        instruction = font.render("Introduce un número y presiona ENTER. (M para volver)", True, (255, 255, 255))
+        input_surface = font.render("Número: " + input_text, True, (255, 255, 255))
+        result_surface = font.render("Respuesta: " + result_text, True, (255, 255, 0))
+        screen.blit(instruction, (50, 50))
+        screen.blit(input_surface, (50, 100))
+        screen.blit(result_surface, (50, 150))
+        pygame.display.flip()
+        clock.tick(30)
+
+###############################
 #       MENÚ PRINCIPAL CON SPRITES
 ###############################
 
@@ -185,7 +234,6 @@ def main_menu(screen, clock, ancho, alto):
     Muestra el menú principal del juego, con animación de sprites de fondo
     y opciones para seleccionar el modo de juego, verificar números primos o salir.
     """
-    # Rutas de archivos de menú (nota: revisa si el nombre es "Menu-1.png" o "Menu-1.png.png")
     menu_filenames = [os.path.join(ASSETS_DIR, f"Menu-{i}.png.png") for i in range(1, 8)]
     menu_frames = load_images_concurrently(menu_filenames)
     
@@ -216,14 +264,8 @@ def main_menu(screen, clock, ancho, alto):
                     pygame.quit()
                     sys.exit()
                 elif event.key == pygame.K_4:
-                    # Opción para verificar un número primo
-                    numero_str = input("Introduce un número entero para verificar si es primo: ").strip()
-                    try:
-                        numero = int(numero_str)
-                        respuesta = verificar_primo_remoto(numero)
-                        print("Respuesta del servidor:", respuesta)
-                    except ValueError:
-                        print("Entrada no válida (debe ser un entero).")
+                    # En lugar de usar input() en la consola, llamamos a la modalidad de verificación
+                    verificar_primo_mode(screen, clock)
         current_time = pygame.time.get_ticks()
         if current_time - last_menu_frame_change >= menu_frame_duration:
             menu_current_frame = (menu_current_frame + 1) % len(menu_frames)
@@ -306,10 +348,8 @@ def mover_rumba_simulation(
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                # Pausar/Reanudar con ESC
                 if event.key == pygame.K_ESCAPE:
                     paused = not paused
-                # Volver al menú principal con M
                 if event.key == pygame.K_m:
                     return "menu"
 
@@ -599,7 +639,6 @@ def mover_rumba_simulation(
 ##############################
 #            MAIN
 ##############################
-
 def main():
     ancho_ventana = 800
     alto_ventana = 650
@@ -635,10 +674,7 @@ def main():
         escala = 0.6
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_to_zona = {
-                executor.submit(calcular_area, largo, ancho): zona 
-                for zona, (largo, ancho) in zonas.items()
-            }
+            future_to_zona = {executor.submit(calcular_area, largo, ancho): zona for zona, (largo, ancho) in zonas.items()}
             areas = {}
             for future in concurrent.futures.as_completed(future_to_zona):
                 zona = future_to_zona[future]
@@ -673,18 +709,9 @@ def main():
             os.path.join(ASSETS_DIR, "laserFrame2.png")
         ]
         laser_normal_h_frames = load_images_concurrently(laser_filenames)
-        laser_normal_v_frames = [
-            pygame.transform.scale(pygame.transform.rotate(surf, 90), (10, 650))
-            for surf in laser_normal_h_frames
-        ]
-        laser_big_h_frames = [
-            pygame.transform.scale(surf, (800, 20))
-            for surf in laser_normal_h_frames
-        ]
-        laser_big_v_frames = [
-            pygame.transform.scale(surf, (20, 650))
-            for surf in laser_normal_v_frames
-        ]
+        laser_normal_v_frames = [pygame.transform.scale(pygame.transform.rotate(surf, 90), (10, 650)) for surf in laser_normal_h_frames]
+        laser_big_h_frames = [pygame.transform.scale(surf, (800, 20)) for surf in laser_normal_h_frames]
+        laser_big_v_frames = [pygame.transform.scale(surf, (20, 650)) for surf in laser_normal_v_frames]
 
         caution_filenames = [
             os.path.join(ASSETS_DIR, "Cuidado1.png"),
@@ -739,12 +766,11 @@ def main():
         ]
         nut_frames_old = load_images_concurrently(nut_file_names, (20, 20))
 
-        # Agrupar todas las animaciones en una lista
         all_nut_animations = [
             tuerca4_frames,
             tuerca5_frames,
             tuerca6_frames,
-            nut_frames_old  # Opcional, la animación antigua
+            nut_frames_old
         ]
 
         obstacles = []
