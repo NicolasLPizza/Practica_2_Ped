@@ -32,3 +32,46 @@
 2025-03-25 14:40:07,594 - INFO - Solicitud de ('127.0.0.1', 51466): 11 -> El número 11 es primo
 2025-03-25 14:40:11,224 - INFO - Solicitud de ('127.0.0.1', 51471): 12 -> El número 12 no es primo
 2025-03-25 14:40:12,036 - INFO - Solicitud de ('127.0.0.1', 51473): 13 -> El número 13 es primo
+2025-03-25 14:45:26,818 - INFO - Solicitud de ('127.0.0.1', 51572): 1 -> El número 1 no es primo
+2025-03-25 14:45:27,591 - INFO - Solicitud de ('127.0.0.1', 51574): 2 -> El número 2 es primo
+2025-03-25 14:45:28,128 - INFO - Solicitud de ('127.0.0.1', 51576): 3 -> El número 3 es primo
+2025-03-25 14:45:28,563 - INFO - Solicitud de ('127.0.0.1', 51577): 4 -> El número 4 no es primo
+2025-03-25 14:45:28,934 - INFO - Solicitud de ('127.0.0.1', 51578): 5 -> El número 5 es primo
+2025-03-25 14:45:29,237 - INFO - Solicitud de ('127.0.0.1', 51579): 6 -> El número 6 no es primo
+2025-03-25 14:45:29,507 - INFO - Solicitud de ('127.0.0.1', 51580): 7 -> El número 7 es primo
+2025-03-25 14:45:29,708 - INFO - Solicitud de ('127.0.0.1', 51581): 8 -> El número 8 no es primo
+2025-03-25 14:45:29,877 - INFO - Solicitud de ('127.0.0.1', 51582): 89 -> El número 89 es primo
+2025-03-25 14:45:30,044 - INFO - Solicitud de ('127.0.0.1', 51583): 90 -> El número 90 no es primo
+2025-03-25 16:36:23,265 - INFO - Solicitud de ('127.0.0.1', 63697): 1 -> El número 1 no es primo
+2025-03-25 16:36:24,404 - INFO - Solicitud de ('127.0.0.1', 63700): 2 -> El número 2 es primo
+2025-03-25 16:36:25,240 - INFO - Solicitud de ('127.0.0.1', 63703): 3 -> El número 3 es primo
+2025-03-25 16:36:25,845 - INFO - Solicitud de ('127.0.0.1', 63705): 4 -> El número 4 no es primo
+2025-03-25 16:36:26,247 - INFO - Solicitud de ('127.0.0.1', 63707): 5 -> El número 5 es primo
+2025-03-25 16:36:26,722 - INFO - Solicitud de ('127.0.0.1', 63709): 67 -> El número 67 es primo
+2025-03-25 16:36:30,421 - INFO - Solicitud de ('127.0.0.1', 63715): 4 -> El número 4 no es primo
+2025-03-25 16:36:31,363 - INFO - Solicitud de ('127.0.0.1', 63716): 5 -> El número 5 es primo
+2025-03-25 16:36:43,231 - INFO - Solicitud de ('127.0.0.1', 63722): 2 -> El número 2 es primo
+2025-03-25 16:36:43,803 - INFO - Solicitud de ('127.0.0.1', 63723): 3 -> El número 3 es primo
+2025-03-25 16:36:44,307 - INFO - Solicitud de ('127.0.0.1', 63724): 4 -> El número 4 no es primo
+2025-03-25 16:36:44,713 - INFO - Solicitud de ('127.0.0.1', 63725): 5 -> El número 5 es primo
+2025-03-25 16:36:45,081 - INFO - Solicitud de ('127.0.0.1', 63726): 6 -> El número 6 no es primo
+2025-03-25 16:36:45,447 - INFO - Solicitud de ('127.0.0.1', 63727): 7 -> El número 7 es primo
+2025-03-25 16:36:46,160 - INFO - Solicitud de ('127.0.0.1', 63728): 3 -> El número 3 es primo
+2025-03-27 10:38:24,643 - INFO - Solicitud de ('127.0.0.1', 51238): 22 -> El número 22 no es primo
+2025-03-27 10:38:25,610 - INFO - Solicitud de ('127.0.0.1', 51240): 34 -> El número 34 no es primo
+2025-03-27 10:38:26,080 - INFO - Solicitud de ('127.0.0.1', 51241): 5 -> El número 5 es primo
+2025-03-27 10:38:26,315 - INFO - Solicitud de ('127.0.0.1', 51242): 6 -> El número 6 no es primo
+2025-03-27 10:38:26,518 - INFO - Solicitud de ('127.0.0.1', 51243): 7 -> El número 7 es primo
+2025-03-27 10:38:26,684 - INFO - Solicitud de ('127.0.0.1', 51244): 7 -> El número 7 es primo
+2025-03-27 10:38:26,851 - INFO - Solicitud de ('127.0.0.1', 51245): 8 -> El número 8 no es primo
+2025-03-27 10:38:27,154 - INFO - Solicitud de ('127.0.0.1', 51246): 7 -> El número 7 es primo
+2025-03-27 10:38:27,354 - INFO - Solicitud de ('127.0.0.1', 51247): 65 -> El número 65 no es primo
+2025-03-27 10:38:27,557 - INFO - Solicitud de ('127.0.0.1', 51248): 43 -> El número 43 es primo
+2025-03-27 10:38:28,062 - INFO - Solicitud de ('127.0.0.1', 51250): 45 -> El número 45 no es primo
+2025-03-27 10:38:28,230 - INFO - Solicitud de ('127.0.0.1', 51251): 6 -> El número 6 no es primo
+2025-03-27 10:38:28,433 - INFO - Solicitud de ('127.0.0.1', 51252): 78 -> El número 78 no es primo
+2025-03-27 11:03:11,953 - INFO - Solicitud de ('127.0.0.1', 61465): 2 -> El número 2 es primo
+2025-03-27 11:03:12,758 - INFO - Solicitud de ('127.0.0.1', 61466): 5 -> El número 5 es primo
+2025-03-27 11:03:13,566 - INFO - Solicitud de ('127.0.0.1', 61467): 32 -> El número 32 no es primo
+2025-03-27 11:34:18,144 - INFO - Solicitud de ('127.0.0.1', 64092): 2 -> El número 2 es primo
+2025-03-27 11:34:18,986 - INFO - Solicitud de ('127.0.0.1', 64093): 4 -> El número 4 no es primo

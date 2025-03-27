@@ -4,8 +4,9 @@ import pygame
 import sys
 import random
 import math
+import requests  # Para conectarse al servidor Flask de puntuaciones
 
-# Importa la función del cliente para verificar números primos
+# Importa la función del cliente para verificar números primos (TCP)
 from prime_client import verificar_primo_remoto
 
 # Define la carpeta donde están todas las imágenes
@@ -136,29 +137,44 @@ def generate_obstacle_candidate(ancho, alto, zonas, posiciones, escala):
     return candidate_rect
 
 ###############################
+#    ACTUALIZAR PUNTUACIÓN (FLASK)
+###############################
+
+def update_score(nombre, puntuacion):
+    """
+    Envía la puntuación final al servidor Flask.
+    """
+    url = "http://127.0.0.1:5000/enviar_puntuacion"
+    data = {"nombre": nombre, "puntuacion": puntuacion}
+    try:
+        response = requests.post(url, json=data)
+        print("Puntuación enviada:", response.json())
+    except Exception as e:
+        print("Error enviando puntuación:", e)
+
+###############################
 #           GAME OVER
 ###############################
 
-def game_over(screen, clock, score):
-    """Muestra un mensaje de Game Over con la puntuación final."""
+def game_over(screen, clock, score, player_name):
+    """
+    Muestra un mensaje de Game Over, envía la puntuación al servidor Flask,
+    y luego retorna "menu" para volver al menú principal.
+    """
+    update_score(player_name, score)
     font = pygame.font.SysFont(None, 48)
-    text = font.render(f"¡Rumba destruido! Tuercas acumuladas: {score}", True, (255, 0, 0))
+    text = font.render(f"¡Rumba destruido! Tuercas: {score}", True, (255, 0, 0))
     screen.fill((0, 0, 0))
     screen.blit(text, (50, 300))
     pygame.display.flip()
     pygame.time.wait(3000)
-    pygame.quit()
-    sys.exit()
+    return "menu"
 
 ###############################
 # FUNCIONES PARA CARGAR IMÁGENES CON CONCURRENCIA
 ###############################
 
 def load_and_scale_image(fname, size=None):
-    """
-    Carga una imagen usando pygame, la convierte a alpha y la escala
-    si se indica un tamaño.
-    """
     print(f"[Imagen] Cargando imagen: {fname}")
     img = pygame.image.load(fname).convert_alpha()
     if size is not None:
@@ -167,9 +183,6 @@ def load_and_scale_image(fname, size=None):
     return img
 
 def load_images_concurrently(fnames, size=None):
-    """
-    Carga una lista de imágenes de forma concurrente y las devuelve en el mismo orden.
-    """
     print(f"[Imagen] Cargando {len(fnames)} imágenes de forma concurrente...")
     with concurrent.futures.ThreadPoolExecutor() as executor:
         images = list(executor.map(lambda fname: load_and_scale_image(fname, size), fnames))
@@ -177,46 +190,135 @@ def load_images_concurrently(fnames, size=None):
     return images
 
 ###############################
-#       NUEVA MODALIDAD: VERIFICAR NÚMERO PRIMO (MODO)
+#   MODALIDAD: ENVIAR PUNTUACIÓN (FLASK)
 ###############################
 
-def verificar_primo_mode(screen, clock):
+def enviar_puntuacion_mode(screen, clock):
     """
-    Modalidad para verificar números primos desde la interfaz del juego.
-    Permite al usuario ingresar un número (con entrada de texto) y muestra
-    en pantalla la respuesta recibida del servidor TCP.
-    Presiona ENTER para enviar y M para volver al menú.
+    Modalidad para enviar la puntuación al servidor Flask.
+    Permite ingresar "nombre, puntuacion". Presiona ENTER para enviar y M para volver.
     """
     font = pygame.font.SysFont(None, 36)
     input_text = ""
     result_text = ""
-    active = True
-
     running = True
+
+    def enviar_puntuacion(nombre, puntuacion):
+        url = "http://127.0.0.1:5000/enviar_puntuacion"
+        data = {"nombre": nombre, "puntuacion": puntuacion}
+        try:
+            response = requests.post(url, json=data)
+            return response.json().get("mensaje", "Sin mensaje")
+        except Exception as e:
+            return f"Error en conexión: {e}"
+
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+                return
             if event.type == pygame.KEYDOWN:
-                # Presionar M para volver al menú principal
                 if event.key == pygame.K_m:
                     return
                 elif event.key == pygame.K_RETURN:
-                    # Al presionar ENTER, intenta convertir el input y verificarlo
                     try:
-                        numero = int(input_text)
-                        result_text = verificar_primo_remoto(numero)
-                    except ValueError:
-                        result_text = "Entrada no válida. Debe ser un entero."
-                    input_text = ""  # Reinicia el input después de enviar
+                        parts = input_text.split(',')
+                        nombre = parts[0].strip()
+                        puntuacion = int(parts[1].strip())
+                        result_text = enviar_puntuacion(nombre, puntuacion)
+                    except Exception as e:
+                        result_text = "Entrada inválida. Usa: nombre, puntuacion"
+                    input_text = ""
                 elif event.key == pygame.K_BACKSPACE:
                     input_text = input_text[:-1]
                 else:
                     input_text += event.unicode
 
+        screen.fill((50, 50, 50))
+        instruction = font.render("Ingresa 'nombre, puntuacion' y ENTER (M para volver)", True, (255, 255, 255))
+        input_surface = font.render("Entrada: " + input_text, True, (255, 255, 255))
+        result_surface = font.render("Respuesta: " + result_text, True, (255, 255, 0))
+        screen.blit(instruction, (50, 50))
+        screen.blit(input_surface, (50, 100))
+        screen.blit(result_surface, (50, 150))
+        pygame.display.flip()
+        clock.tick(30)
+
+###############################
+#   MODALIDAD: VER RANKING (FLASK)
+###############################
+
+def ver_ranking_mode(screen, clock):
+    """
+    Modalidad para consultar el ranking de puntuaciones desde el servidor Flask.
+    Presiona M para volver.
+    """
+    font = pygame.font.SysFont(None, 36)
+    ranking_text = ""
+    running = True
+
+    def obtener_ranking():
+        url = "http://127.0.0.1:5000/ranking"
+        try:
+            response = requests.get(url)
+            return response.json()
+        except Exception as e:
+            return f"Error en conexión: {e}"
+
+    data = obtener_ranking()
+    if isinstance(data, list):
+        ranking_text = "\n".join([f"{i+1}. {item['nombre']} : {item['puntuacion']}" for i, item in enumerate(data)])
+    else:
+        ranking_text = data
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_m:
+                    return
+
+        screen.fill((50, 50, 50))
+        instruction = font.render("Ranking (M para volver)", True, (255, 255, 255))
+        ranking_surface = font.render(ranking_text, True, (255, 255, 0))
+        screen.blit(instruction, (50, 50))
+        screen.blit(ranking_surface, (50, 100))
+        pygame.display.flip()
+        clock.tick(30)
+
+###############################
+#   MODALIDAD: VERIFICAR NÚMERO PRIMO (TCP)
+###############################
+
+def verificar_primo_mode(screen, clock):
+    """
+    Modalidad para verificar números primos mediante TCP.
+    Presiona ENTER para enviar y M para volver.
+    """
+    font = pygame.font.SysFont(None, 36)
+    input_text = ""
+    result_text = ""
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_m:
+                    return
+                elif event.key == pygame.K_RETURN:
+                    try:
+                        numero = int(input_text)
+                        result_text = verificar_primo_remoto(numero)
+                    except ValueError:
+                        result_text = "Entrada no válida. Debe ser un entero."
+                    input_text = ""
+                elif event.key == pygame.K_BACKSPACE:
+                    input_text = input_text[:-1]
+                else:
+                    input_text += event.unicode
         screen.fill((30, 30, 30))
-        instruction = font.render("Introduce un número y presiona ENTER. (M para volver)", True, (255, 255, 255))
+        instruction = font.render("Número y ENTER (M para volver)", True, (255, 255, 255))
         input_surface = font.render("Número: " + input_text, True, (255, 255, 255))
         result_surface = font.render("Respuesta: " + result_text, True, (255, 255, 0))
         screen.blit(instruction, (50, 50))
@@ -230,10 +332,6 @@ def verificar_primo_mode(screen, clock):
 ###############################
 
 def main_menu(screen, clock, ancho, alto):
-    """
-    Muestra el menú principal del juego, con animación de sprites de fondo
-    y opciones para seleccionar el modo de juego, verificar números primos o salir.
-    """
     menu_filenames = [os.path.join(ASSETS_DIR, f"Menu-{i}.png.png") for i in range(1, 8)]
     menu_frames = load_images_concurrently(menu_filenames)
     
@@ -245,9 +343,11 @@ def main_menu(screen, clock, ancho, alto):
     option_font = pygame.font.SysFont(None, 28)
     title_text = title_font.render("Tony Stark Lab", True, (255, 255, 255))
     option1 = option_font.render("1) Inicio de juego (Manual)", True, (255, 255, 255))
-    option2 = option_font.render("2) Modo expectador (Auto)", True, (255, 255, 255))
+    option2 = option_font.render("2) Modo espectador (Auto)", True, (255, 255, 255))
     option3 = option_font.render("3) Salir", True, (255, 255, 255))
     option4 = option_font.render("4) Verificar número primo", True, (255, 255, 255))
+    option5 = option_font.render("5) Enviar puntuación", True, (255, 255, 255))
+    option6 = option_font.render("6) Ver ranking", True, (255, 255, 255))
     text_x = ancho//2 + 100
 
     while True:
@@ -264,8 +364,11 @@ def main_menu(screen, clock, ancho, alto):
                     pygame.quit()
                     sys.exit()
                 elif event.key == pygame.K_4:
-                    # En lugar de usar input() en la consola, llamamos a la modalidad de verificación
                     verificar_primo_mode(screen, clock)
+                elif event.key == pygame.K_5:
+                    enviar_puntuacion_mode(screen, clock)
+                elif event.key == pygame.K_6:
+                    ver_ranking_mode(screen, clock)
         current_time = pygame.time.get_ticks()
         if current_time - last_menu_frame_change >= menu_frame_duration:
             menu_current_frame = (menu_current_frame + 1) % len(menu_frames)
@@ -277,6 +380,8 @@ def main_menu(screen, clock, ancho, alto):
         screen.blit(option2, (text_x, alto//2 + 50))
         screen.blit(option3, (text_x, alto//2 + 100))
         screen.blit(option4, (text_x, alto//2 + 150))
+        screen.blit(option5, (text_x, alto//2 + 200))
+        screen.blit(option6, (text_x, alto//2 + 250))
         pygame.display.flip()
         clock.tick(30)
 
@@ -302,14 +407,12 @@ def mover_rumba_simulation(
     laser_big_v_frames,
     caution_frames,
     all_nut_animations,
+    player_name,
     manual_mode=False
 ):
     """
-    Función principal de simulación del juego:
-      - Movimiento del robot (Rumba)
-      - Generación y animación de láseres
-      - Aparición de tuercas con animaciones aleatorias
-      - Manejo de pausa (con ESC) y opción de volver al menú (con M)
+    Simulación del juego: movimiento, láseres, tuercas, etc.
+    Recibe 'player_name' para enviar la puntuación final al servidor al terminar.
     """
     rumba_pos = [50, 50]
     velocidad = 5
@@ -339,7 +442,7 @@ def mover_rumba_simulation(
     nuts = []
     max_nuts_per_zone = 3
 
-    narracion = "Rumba: Robot de Tony Stark, limpiador de tuercas y cazador de láseres."
+    narracion = f"Rumba de {player_name}: Robot de Tony Stark, limpiador de tuercas y cazador de láseres."
 
     running = True
     while running:
@@ -417,8 +520,8 @@ def mover_rumba_simulation(
                                 visible_length = candidate
                     d = distance_point_to_line(rumba_pos, (sx, 0), (sx, visible_length))
                 if d <= 10:
-                    game_over(screen, clock, score)
-                    return
+                    result = game_over(screen, clock, score, player_name)
+                    return result
             else:
                 continue
             lasers_nuevos.append(laser)
@@ -516,8 +619,7 @@ def mover_rumba_simulation(
         ##############################
         screen.blit(background, (0, 0))
         narr_text = pygame.font.SysFont(None, 28).render(
-            "Rumba: Robot de Tony Stark, limpiador de tuercas y cazador de láseres.",
-            True, (0, 0, 0)
+            f"{narracion}", True, (0, 0, 0)
         )
         screen.blit(narr_text, (50, 10))
 
@@ -613,16 +715,11 @@ def mover_rumba_simulation(
         offset_y = current_sprite.get_height() // 2
         screen.blit(current_sprite, (int(rumba_pos[0]) - offset_x, int(rumba_pos[1]) - offset_y))
 
-        scoreboard_nut_frame = all_nut_animations[0][nut_current_frame % len(all_nut_animations[0])]
-        scoreboard_nut_anim = pygame.transform.scale(scoreboard_nut_frame, (30, 30))
         scoreboard_font = pygame.font.SysFont(None, 24)
         scoreboard_text = scoreboard_font.render(str(score), True, (0, 0, 0))
-        scoreboard_x = 800 - 10 - scoreboard_text.get_width()
-        scoreboard_y = 5
+        scoreboard_x = 800 - 50
+        scoreboard_y = 10
         screen.blit(scoreboard_text, (scoreboard_x, scoreboard_y))
-        scoreboard_icon_x = scoreboard_x - scoreboard_nut_anim.get_width() - 5
-        scoreboard_icon_y = scoreboard_y
-        screen.blit(scoreboard_nut_anim, (scoreboard_icon_x, scoreboard_icon_y))
 
         info_superficie = pygame.font.SysFont(None, 24).render(
             f"Superficie total: {superficie_total} cm²", True, (0, 0, 0)
@@ -636,9 +733,12 @@ def mover_rumba_simulation(
         pygame.display.flip()
         clock.tick(30)
 
-##############################
+    # Si se sale del bucle, se regresa al menú
+    return "menu"
+
+###############################
 #            MAIN
-##############################
+###############################
 def main():
     ancho_ventana = 800
     alto_ventana = 650
@@ -648,9 +748,13 @@ def main():
     clock = pygame.time.Clock()
 
     while True:
-        modo = main_menu(screen, clock, ancho_ventana, alto_ventana)
-        manual_mode = (modo == "manual")
-        print("Modo seleccionado:", modo)
+        mode = main_menu(screen, clock, ancho_ventana, alto_ventana)
+        if mode == "manual":
+            player_name = input("Introduce tu nombre: ").strip()
+        else:
+            player_name = "AutoBot"
+        print("Modo seleccionado:", mode)
+        manual_mode = (mode == "manual")
 
         # Definición de zonas
         zonas = {
@@ -674,7 +778,10 @@ def main():
         escala = 0.6
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_to_zona = {executor.submit(calcular_area, largo, ancho): zona for zona, (largo, ancho) in zonas.items()}
+            future_to_zona = {
+                executor.submit(calcular_area, largo, ancho): zona
+                for zona, (largo, ancho) in zonas.items()
+            }
             areas = {}
             for future in concurrent.futures.as_completed(future_to_zona):
                 zona = future_to_zona[future]
@@ -719,7 +826,7 @@ def main():
         ]
         caution_frames = load_images_concurrently(caution_filenames, (64, 64))
 
-        # Cargar nuevas animaciones de tuercas:
+        # Cargar animaciones de tuercas
         tuerca4_filenames = [
             os.path.join(ASSETS_DIR, "tuerca4.1-1.png.png"),
             os.path.join(ASSETS_DIR, "tuerca4.2-2.png.png"),
@@ -806,6 +913,7 @@ def main():
             laser_big_v_frames,
             caution_frames,
             all_nut_animations,
+            player_name,
             manual_mode=manual_mode
         )
         if ret == "menu":
@@ -815,3 +923,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
