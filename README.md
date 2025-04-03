@@ -18,18 +18,24 @@ El juego se integra con el módulo TCP y el servidor Flask para enviar puntuacio
 Estructura del Repositorio
 
 Practica_2_Ped/
-│
-├── assets/                  # Carpeta con todos los recursos gráficos (imágenes, sprites, etc.)
-│
-├── __pycache__/             # Archivos compilados de Python
-│
-├── server.py                # Servidor TCP para otras funcionalidades (ejemplo: verificación de números primos)
-├── app.py                   # Servidor Flask para gestionar puntuaciones y ranking
-├── Juego_RumbA.py           # Juego principal RoomBA desarrollado con Pygame
-├── prime_client.py          # Módulo cliente TCP que contiene la función verificar_primo_remoto()
-├── requirements.txt         # Lista de dependencias del proyecto
-├── README.md                # Este archivo: instrucciones y descripción del proyecto
-└── CHANGELOG.md             # (Opcional) Historial de cambios del proyecto
+
+assets/                  # Carpeta con todos los recursos gráficos (imágenes, sprites, etc.)
+
+__pycache__/             # Archivos compilados de Python
+
+server.py                # Servidor TCP para otras funcionalidades (ejemplo: verificación de números primos)
+
+app.py                   # Servidor Flask para gestionar puntuaciones y ranking
+
+Juego_RumbA.py           # Juego principal RoomBA desarrollado con Pygame
+
+prime_client.py          # Módulo cliente TCP que contiene la función verificar_primo_remoto()
+
+requirements.txt         # Lista de dependencias del proyecto
+
+README.md                # Este archivo: instrucciones y descripción del proyecto
+
+CHANGELOG.md             # (Opcional) Historial de cambios del proyecto
 #Requisitos# 
 Python 3.8+ (se recomienda usar un entorno virtual)
 
