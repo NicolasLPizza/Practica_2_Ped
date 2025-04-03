@@ -39,7 +39,7 @@ CHANGELOG.md             # (Opcional) Historial de cambios del proyecto
 #Requisitos# 
 Python 3.8+ (se recomienda usar un entorno virtual)
 
-Dependencias listadas en requirements.txt, que incluye:
+Para que el programa funcione, sus requisitos basicos incluye:
 
 pygame
 
