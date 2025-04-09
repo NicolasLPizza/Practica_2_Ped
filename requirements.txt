@@ -1,0 +1,23 @@
+Para que el programa funcione, sus requisitos basicos incluye:
+
+pygame
+
+flask
+
+requests
+
+Para instalarlas, puedes usar:
+
+pip install -r requirements.txt Instrucciones de Ejecución El proyecto se ejecuta en tres terminales distintas:
+
+Servidor TCP:
+
+Abre una terminal y ejecuta:
+
+python server.py Esto iniciará el servidor TCP (asegúrate de que esté corriendo en 127.0.0.1:5000 si es que lo requiere el cliente).
+
+Servidor Flask de Puntuaciones:
+
+Abre una segunda terminal y ejecuta:
+
+python app.py El servidor Flask se levantará en 127.0.0.1:5000 (por defecto) y gestionará las puntuaciones, permitiendo registrar y consultar el ranking.
